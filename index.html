@@ -159,15 +159,16 @@
             justify-content: center;
             align-items: center;
             z-index: 200;
-            pointer-events: auto;
             backdrop-filter: blur(8px);
             opacity: 0;
-            transition: opacity 0.5s;
-            pointer-events: none;
+            visibility: hidden; /* Hide completely when not active */
+            transition: opacity 0.5s, visibility 0s 0.5s; /* Delay hiding visibility until fade out is done */
         }
         
         #game-over-screen.visible {
             opacity: 1;
+            visibility: visible;
+            transition: opacity 0.5s, visibility 0s; /* Show immediately for fade in */
             pointer-events: auto;
         }
 
@@ -190,7 +191,6 @@
         }
 
         .btn {
-            pointer-events: auto;
             background: rgba(0, 0, 0, 0.6);
             color: #d63384;
             border: 1px solid #d63384;
@@ -385,9 +385,6 @@
         let player = { x: 0, y: 0 }; 
         let camera = { x: 0, y: 0 }; 
         
-        // Input State
-        let joystick = { active: false, origin: {x:0, y:0}, current: {x:0, y:0}, triggered: false, lastMoveTime: 0 };
-        
         let canvas, ctx;
         let ui = {
             rooms: document.getElementById('room-counter'),
@@ -433,27 +430,6 @@
                 p.size *= 0.95;
                 if (p.life <= 0) particles.splice(i, 1);
             }
-            
-            // Continuous Movement for Joystick Hold
-            if (joystick.active) {
-                const now = performance.now();
-                const dx = joystick.current.x - joystick.origin.x;
-                const dy = joystick.current.y - joystick.origin.y;
-                const dist = Math.sqrt(dx*dx + dy*dy);
-                
-                if (dist > 30) {
-                    if (!joystick.triggered || (now - joystick.lastMoveTime > 200)) {
-                        // Determine dir
-                        if (Math.abs(dx) > Math.abs(dy)) attemptMove(dx > 0 ? 1 : -1, 0);
-                        else attemptMove(0, dy > 0 ? 1 : -1);
-                        
-                        joystick.triggered = true;
-                        joystick.lastMoveTime = now;
-                    }
-                } else {
-                    joystick.triggered = false; // Reset if user pulls back to center
-                }
-            }
         }
 
         // --- INITIALIZATION ---
@@ -490,7 +466,6 @@
             
             player = { x: 0, y: 0 };
             visualPlayer = { x: 0, y: 0 }; 
-            joystick = { active: false, origin: {x:0, y:0}, current: {x:0, y:0}, triggered: false, lastMoveTime: 0 };
             
             ui.gameOver.classList.remove('visible');
             updateUI();
@@ -797,55 +772,63 @@
                 if (e.key === "ArrowUp") attemptMove(0, -1);
             });
 
-            // Floating Joystick & Tap Logic
-            canvas.addEventListener('touchstart', e => {
-                e.preventDefault();
-                SoundManager.init(); // Audio unlock
-                const touch = e.changedTouches[0];
-                joystick.active = true;
-                joystick.origin = { x: touch.clientX, y: touch.clientY };
-                joystick.current = { x: touch.clientX, y: touch.clientY };
-                joystick.triggered = false;
-            }, {passive: false});
+            let touchStartX = 0;
+            let touchStartY = 0;
 
-            canvas.addEventListener('touchmove', e => {
-                e.preventDefault();
-                if (!joystick.active) return;
-                const touch = e.changedTouches[0];
-                joystick.current = { x: touch.clientX, y: touch.clientY };
+            // Touch Handler
+            canvas.addEventListener('touchstart', e => {
+                e.preventDefault(); 
+                SoundManager.init();
+                touchStartX = e.changedTouches[0].clientX;
+                touchStartY = e.changedTouches[0].clientY;
             }, {passive: false});
 
             canvas.addEventListener('touchend', e => {
                 e.preventDefault();
+                const touchEndX = e.changedTouches[0].clientX;
+                const touchEndY = e.changedTouches[0].clientY;
                 
-                // If movement was minimal (<30px), treat as TAP
-                const dx = joystick.current.x - joystick.origin.x;
-                const dy = joystick.current.y - joystick.origin.y;
-                const dist = Math.sqrt(dx*dx + dy*dy);
+                const dx = touchEndX - touchStartX;
+                const dy = touchEndY - touchStartY;
                 
-                if (dist < 30 && !joystick.triggered) {
-                    handleTap(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+                // If movement is small (tap), handle direction
+                // If it's a large swipe, we could handle it, but let's stick to tap priority for now
+                if (Math.abs(dx) < 30 && Math.abs(dy) < 30) {
+                    handleTap(touchEndX, touchEndY);
+                } else {
+                    // Fallback to swipe if user drags finger significantly
+                    if (Math.abs(dx) > Math.abs(dy)) {
+                        attemptMove(dx > 0 ? 1 : -1, 0);
+                    } else {
+                        attemptMove(0, dy > 0 ? 1 : -1);
+                    }
                 }
-                
-                joystick.active = false;
-                joystick.triggered = false;
+            });
+            
+            // Mouse Click for desktop testing
+            canvas.addEventListener('mousedown', e => {
+                 SoundManager.init();
+                 handleTap(e.clientX, e.clientY);
             });
         }
 
         function handleTap(screenX, screenY) {
-            // Convert Screen Coordinates to World/Grid Coordinates
-            const worldX = screenX + camera.x;
-            const worldY = screenY + camera.y;
-            const gridX = Math.floor(worldX / CELL_SIZE);
-            const gridY = Math.floor(worldY / CELL_SIZE);
+            // Virtual Center Configuration
+            // X is center of screen
+            // Y is 75% down the screen (bottom area)
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight * 0.75; 
             
-            // Check adjacency
-            const dx = gridX - player.x;
-            const dy = gridY - player.y;
+            const dx = screenX - centerX;
+            const dy = screenY - centerY;
             
-            // Only move if strictly adjacent (not diagonal, not self, not far)
-            if (Math.abs(dx) + Math.abs(dy) === 1) {
-                attemptMove(dx, dy);
+            // Determine dominant direction relative to this virtual center
+            if (Math.abs(dx) > Math.abs(dy)) {
+                // Horizontal
+                attemptMove(dx > 0 ? 1 : -1, 0);
+            } else {
+                // Vertical
+                attemptMove(0, dy > 0 ? 1 : -1);
             }
         }
 
@@ -996,24 +979,6 @@
             ctx.shadowBlur = 0;
 
             ctx.restore();
-            
-            // 5. Draw Virtual Joystick (Overlay)
-            if (joystick.active) {
-                ctx.save();
-                // Base
-                ctx.beginPath();
-                ctx.arc(joystick.origin.x, joystick.origin.y, 40, 0, Math.PI * 2);
-                ctx.strokeStyle = "rgba(214, 51, 132, 0.5)";
-                ctx.lineWidth = 4;
-                ctx.stroke();
-                
-                // Stick
-                ctx.beginPath();
-                ctx.arc(joystick.current.x, joystick.current.y, 20, 0, Math.PI * 2);
-                ctx.fillStyle = "rgba(214, 51, 132, 0.8)";
-                ctx.fill();
-                ctx.restore();
-            }
         }
     </script>
 </body>
