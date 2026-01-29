@@ -111,7 +111,9 @@
             position: fixed; top: 20px; right: 20px;
             z-index: 150; pointer-events: auto;
             background: #d63384; color: #fff;
-            border: none; padding: 10px 20px;
+            border: none; 
+            padding: 8px 12px; /* Smaller padding */
+            font-size: 11px; /* Smaller font */
             font-family: 'Courier New', monospace; font-weight: bold;
             cursor: pointer; clip-path: polygon(10% 0, 100% 0, 90% 100%, 0% 100%);
             transition: all 0.2s;
@@ -147,13 +149,6 @@
         @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
         .reward-text { font-family: 'Courier New', monospace; font-size: 24px; margin-top: 10px; font-weight: bold; text-align: center; color: #fff; line-height: 1.5; }
-
-        #ui-layer {
-            position: absolute;
-            bottom: 30px;
-            right: 30px;
-            pointer-events: none;
-        }
 
         #game-over-screen {
             position: fixed;
@@ -349,12 +344,10 @@
                     osc.stop(t + 1.0);
                 }
                 else if (type === 'gacha') {
-                    // Computing sound
                     osc.type = 'square';
                     osc.frequency.setValueAtTime(220, t);
                     osc.frequency.linearRampToValueAtTime(880, t + 0.8);
                     
-                    // Filter sweep
                     const filter = this.ctx.createBiquadFilter();
                     filter.type = 'bandpass';
                     filter.frequency.setValueAtTime(500, t);
@@ -378,16 +371,13 @@
         let items = new Map(); 
         let realizedCells = new Set(); 
         
-        // Game Logic State
         let energy = 100;
         let dataScore = 0;
         let isGameOver = false;
         
-        // Gacha State
         let activeColor = "#e74c3c";
         let unlockedSkins = new Set(["Default Red"]);
         
-        // Animation State
         let cellSpawnTime = new Map(); 
         let particles = []; 
         let visualPlayer = { x: 0, y: 0 }; 
@@ -395,7 +385,9 @@
         let player = { x: 0, y: 0 }; 
         let camera = { x: 0, y: 0 }; 
         
-        // DOM Elements
+        // Input State
+        let joystick = { active: false, origin: {x:0, y:0}, current: {x:0, y:0}, triggered: false, lastMoveTime: 0 };
+        
         let canvas, ctx;
         let ui = {
             rooms: document.getElementById('room-counter'),
@@ -441,6 +433,27 @@
                 p.size *= 0.95;
                 if (p.life <= 0) particles.splice(i, 1);
             }
+            
+            // Continuous Movement for Joystick Hold
+            if (joystick.active) {
+                const now = performance.now();
+                const dx = joystick.current.x - joystick.origin.x;
+                const dy = joystick.current.y - joystick.origin.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                
+                if (dist > 30) {
+                    if (!joystick.triggered || (now - joystick.lastMoveTime > 200)) {
+                        // Determine dir
+                        if (Math.abs(dx) > Math.abs(dy)) attemptMove(dx > 0 ? 1 : -1, 0);
+                        else attemptMove(0, dy > 0 ? 1 : -1);
+                        
+                        joystick.triggered = true;
+                        joystick.lastMoveTime = now;
+                    }
+                } else {
+                    joystick.triggered = false; // Reset if user pulls back to center
+                }
+            }
         }
 
         // --- INITIALIZATION ---
@@ -450,6 +463,10 @@
             window.addEventListener('resize', resizeCanvas);
             resizeCanvas();
             resetGame();
+            
+            // Setup Inputs inside onload where canvas is guaranteed to exist
+            setupInputHandlers();
+            
             requestAnimationFrame(gameLoop);
         };
 
@@ -468,11 +485,12 @@
             
             roomIdCounter = 0;
             energy = 100;
-            dataScore = 0; // Reset score on death, but skins persist (unlockedSkins not cleared)
+            dataScore = 0; 
             isGameOver = false;
             
             player = { x: 0, y: 0 };
             visualPlayer = { x: 0, y: 0 }; 
+            joystick = { active: false, origin: {x:0, y:0}, current: {x:0, y:0}, triggered: false, lastMoveTime: 0 };
             
             ui.gameOver.classList.remove('visible');
             updateUI();
@@ -494,7 +512,6 @@
             ui.energyVal.innerText = Math.ceil(energy) + "%";
             ui.energyFill.style.width = Math.max(0, energy) + "%";
             
-            // Energy bar color
             if (energy < 20) {
                 ui.energyFill.style.background = "#ff3333";
                 ui.energyFill.style.boxShadow = "0 0 10px #ff3333";
@@ -503,7 +520,6 @@
                 ui.energyFill.style.boxShadow = "0 0 10px #00f3ff";
             }
 
-            // Enable/Disable Gacha
             if (dataScore >= GACHA_COST) {
                 ui.gachaBtn.disabled = false;
             } else {
@@ -521,45 +537,37 @@
         function openGacha() {
             if (dataScore < GACHA_COST) return;
             
-            // Spend Data
             dataScore -= GACHA_COST;
             updateUI();
             SoundManager.play('gacha');
 
-            // Show UI
             ui.gachaOverlay.style.display = 'flex';
             ui.pullResult.innerText = "DECODING CORE...";
             ui.pullResult.style.color = "#fff";
             ui.pullVisual.style.boxShadow = "0 0 50px #fff";
             ui.pullVisual.style.borderColor = "#fff";
 
-            // Delay for suspense
             setTimeout(() => {
                 const roll = Math.random();
                 let item;
                 
-                // Drop Rates: 5% Legendary, 20% Rare, 75% Common
                 if(roll > 0.95) item = LOOT_TABLE.filter(i => i.rarity === "Legendary")[Math.floor(Math.random() * 2)]; 
                 else if(roll > 0.75) item = LOOT_TABLE.filter(i => i.rarity === "Rare")[Math.floor(Math.random() * 4)];
                 else item = LOOT_TABLE.filter(i => i.rarity === "Common")[Math.floor(Math.random() * 2)];
 
-                // Unlock
                 activeColor = item.color;
                 unlockedSkins.add(item.name);
                 
-                // Show Result
                 ui.pullResult.innerHTML = `<span style="color:${item.color}">${item.rarity.toUpperCase()}:<br>${item.name}</span><br><span style="font-size:14px; color:#aaa">CORE EQUIPPED</span>`;
                 ui.pullVisual.style.boxShadow = `0 0 80px ${item.color}`;
                 ui.pullVisual.style.borderColor = item.color;
                 
-                // Play success sound
                 SoundManager.play('collect');
                 
             }, 1000);
         }
 
         function closeGacha() {
-            // Only close if text isn't "DECODING..."
             if (ui.pullResult.innerText !== "DECODING CORE...") {
                 ui.gachaOverlay.style.display = 'none';
             }
@@ -592,7 +600,6 @@
             let placed = false;
             roomIdCounter++;
             
-            // UI Bump
             ui.roomPanel.classList.remove('stat-bump');
             void ui.roomPanel.offsetWidth;
             ui.roomPanel.classList.add('stat-bump');
@@ -752,7 +759,7 @@
                 player.x = targetX;
                 player.y = targetY;
                 SoundManager.play('move');
-                spawnParticles(player.x, player.y, activeColor); // Use Active Skin Color
+                spawnParticles(player.x, player.y, activeColor); 
 
                 if (items.has(`${player.x},${player.y}`)) {
                     items.delete(`${player.x},${player.y}`);
@@ -781,45 +788,64 @@
             updateUI();
         }
 
-        // --- INPUT ---
-        window.addEventListener('keydown', (e) => {
-            if (e.key === "ArrowRight") attemptMove(1, 0);
-            if (e.key === "ArrowLeft") attemptMove(-1, 0);
-            if (e.key === "ArrowDown") attemptMove(0, 1);
-            if (e.key === "ArrowUp") attemptMove(0, -1);
-        });
+        // --- INPUT HANDLERS ---
+        function setupInputHandlers() {
+            window.addEventListener('keydown', (e) => {
+                if (e.key === "ArrowRight") attemptMove(1, 0);
+                if (e.key === "ArrowLeft") attemptMove(-1, 0);
+                if (e.key === "ArrowDown") attemptMove(0, 1);
+                if (e.key === "ArrowUp") attemptMove(0, -1);
+            });
 
-        let touchStartX = 0, touchStartY = 0;
-        window.addEventListener('touchstart', (e) => {
-            SoundManager.init(); 
-            touchStartX = e.changedTouches[0].clientX;
-            touchStartY = e.changedTouches[0].clientY;
-        }, {passive: false});
+            // Floating Joystick & Tap Logic
+            canvas.addEventListener('touchstart', e => {
+                e.preventDefault();
+                SoundManager.init(); // Audio unlock
+                const touch = e.changedTouches[0];
+                joystick.active = true;
+                joystick.origin = { x: touch.clientX, y: touch.clientY };
+                joystick.current = { x: touch.clientX, y: touch.clientY };
+                joystick.triggered = false;
+            }, {passive: false});
 
-        window.addEventListener('touchend', (e) => {
-            const touchEndX = e.changedTouches[0].clientX;
-            const touchEndY = e.changedTouches[0].clientY;
-            handleInput(touchEndX, touchEndY);
-        }, {passive: false});
+            canvas.addEventListener('touchmove', e => {
+                e.preventDefault();
+                if (!joystick.active) return;
+                const touch = e.changedTouches[0];
+                joystick.current = { x: touch.clientX, y: touch.clientY };
+            }, {passive: false});
 
-        function handleInput(endX, endY) {
-            const dx = endX - touchStartX;
-            const dy = endY - touchStartY;
-            const absDx = Math.abs(dx);
-            const absDy = Math.abs(dy);
-            
-            if (Math.max(absDx, absDy) > 30) {
-                if (absDx > absDy) attemptMove(dx > 0 ? 1 : -1, 0);
-                else attemptMove(0, dy > 0 ? 1 : -1);
-            } else {
-                const centerX = window.innerWidth / 2;
-                const centerY = window.innerHeight / 2;
-                const tapDx = endX - centerX;
-                const tapDy = endY - centerY;
-                if (Math.abs(tapDx) > 30 || Math.abs(tapDy) > 30) {
-                    if (Math.abs(tapDx) > Math.abs(tapDy)) attemptMove(tapDx > 0 ? 1 : -1, 0);
-                    else attemptMove(0, tapDy > 0 ? 1 : -1);
+            canvas.addEventListener('touchend', e => {
+                e.preventDefault();
+                
+                // If movement was minimal (<30px), treat as TAP
+                const dx = joystick.current.x - joystick.origin.x;
+                const dy = joystick.current.y - joystick.origin.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                
+                if (dist < 30 && !joystick.triggered) {
+                    handleTap(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
                 }
+                
+                joystick.active = false;
+                joystick.triggered = false;
+            });
+        }
+
+        function handleTap(screenX, screenY) {
+            // Convert Screen Coordinates to World/Grid Coordinates
+            const worldX = screenX + camera.x;
+            const worldY = screenY + camera.y;
+            const gridX = Math.floor(worldX / CELL_SIZE);
+            const gridY = Math.floor(worldY / CELL_SIZE);
+            
+            // Check adjacency
+            const dx = gridX - player.x;
+            const dy = gridY - player.y;
+            
+            // Only move if strictly adjacent (not diagonal, not self, not far)
+            if (Math.abs(dx) + Math.abs(dy) === 1) {
+                attemptMove(dx, dy);
             }
         }
 
@@ -957,7 +983,7 @@
             }
             ctx.globalAlpha = 1.0;
 
-            // 4. Player (Use activeColor from Gacha)
+            // 4. Player
             ctx.fillStyle = activeColor;
             const pScale = 1 + Math.sin(timestamp * 0.01) * 0.05;
             const pSize = (CELL_SIZE - 30) * pScale;
@@ -970,6 +996,24 @@
             ctx.shadowBlur = 0;
 
             ctx.restore();
+            
+            // 5. Draw Virtual Joystick (Overlay)
+            if (joystick.active) {
+                ctx.save();
+                // Base
+                ctx.beginPath();
+                ctx.arc(joystick.origin.x, joystick.origin.y, 40, 0, Math.PI * 2);
+                ctx.strokeStyle = "rgba(214, 51, 132, 0.5)";
+                ctx.lineWidth = 4;
+                ctx.stroke();
+                
+                // Stick
+                ctx.beginPath();
+                ctx.arc(joystick.current.x, joystick.current.y, 20, 0, Math.PI * 2);
+                ctx.fillStyle = "rgba(214, 51, 132, 0.8)";
+                ctx.fill();
+                ctx.restore();
+            }
         }
     </script>
 </body>
