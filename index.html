@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <!-- SEO & Open Graph Tags -->
+    <title>Procedural Dungeon Crawler | Infinite Map Generator</title>
+    <meta name="description" content="Explore an infinite, procedurally generated dungeon. Navigate room by room, solve layout puzzles, and survive the endless void. Mobile-friendly web game.">
+    <meta name="keywords" content="procedural generation, dungeon crawler, infinite map, bsp dungeon, web game, javascript game">
+    <meta name="author" content="Procedural Gen Bot">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://example.com/dungeon-crawler">
+    <meta property="og:title" content="Procedural Dungeon Crawler">
+    <meta property="og:description" content="How deep can you go? Explore an infinite grid of procedurally connected rooms.">
+    <meta property="og:image" content="https://placehold.co/1200x630/1a1a1a/d63384?text=Infinite+Dungeon">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://example.com/dungeon-crawler">
+    <meta property="twitter:title" content="Procedural Dungeon Crawler">
+    <meta property="twitter:description" content="Explore an infinite, procedurally generated dungeon.">
+    <meta property="twitter:image" content="https://placehold.co/1200x630/1a1a1a/d63384?text=Infinite+Dungeon">
+
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #000;
+            color: #eee;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Prevent scrollbars */
+            touch-action: none; /* Prevent browser gestures like pull-to-refresh */
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Crazy HUD Styles */
+        #hud-layer {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .hud-panel {
+            background: rgba(10, 10, 10, 0.85);
+            border: 2px solid #d63384;
+            border-left: 5px solid #d63384;
+            padding: 10px 15px;
+            border-radius: 4px;
+            box-shadow: 0 0 15px rgba(214, 51, 132, 0.3), inset 0 0 20px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+            min-width: 120px;
+            transform: skewX(-5deg);
+        }
+
+        .hud-label {
+            font-family: 'Courier New', monospace;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #ff80bf;
+            margin-bottom: 2px;
+            text-shadow: 0 0 5px rgba(214, 51, 132, 0.5);
+        }
+
+        .hud-value {
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 28px;
+            font-weight: 800;
+            color: #fff;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+            line-height: 1;
+        }
+
+        /* Animated Pulse for Stat Update */
+        @keyframes pulse-neon {
+            0% { box-shadow: 0 0 15px rgba(214, 51, 132, 0.3); transform: skewX(-5deg) scale(1); }
+            50% { box-shadow: 0 0 30px rgba(214, 51, 132, 0.8); transform: skewX(-5deg) scale(1.05); }
+            100% { box-shadow: 0 0 15px rgba(214, 51, 132, 0.3); transform: skewX(-5deg) scale(1); }
+        }
+
+        .stat-bump {
+            animation: pulse-neon 0.2s ease-out;
+        }
+
+        #ui-layer {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            pointer-events: none;
+        }
+
+        .btn {
+            pointer-events: auto;
+            background: rgba(0, 0, 0, 0.6);
+            color: #d63384;
+            border: 1px solid #d63384;
+            padding: 12px 24px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+            box-shadow: 0 0 10px rgba(214, 51, 132, 0.2);
+        }
+        
+        .btn:hover {
+            background: #d63384;
+            color: #000;
+            box-shadow: 0 0 20px rgba(214, 51, 132, 0.6);
+        }
+        
+        .btn:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- HUD Layer -->
+    <div id="hud-layer">
+        <div class="hud-panel" id="rooms-panel">
+            <div class="hud-label">Rooms Unlocked</div>
+            <div class="hud-value" id="room-counter">0</div>
+        </div>
+        <!-- Placeholder for future stats -->
+        <!-- <div class="hud-panel"><div class="hud-label">Depth</div><div class="hud-value">1</div></div> -->
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui-layer">
+        <button class="btn" onclick="resetGame()">System Reboot</button>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        const CELL_SIZE = 60; 
+        
+        // --- TEMPLATES ---
+        const TEMPLATES = [
+            { name: "3x3 Room", shape: [[1,1,1],[1,1,1],[1,1,1]] },
+            { name: "2x2 Room", shape: [[1,1],[1,1]] },
+            { name: "Hallway H", shape: [[1,1,1]] },
+            { name: "Hallway V", shape: [[1],[1],[1]] },
+            { name: "U Shape", shape: [[1,0,1],[1,1,1]] },
+            { name: "O Shape", shape: [[1,1,1],[1,0,1], [1,1,1]] },
+            { name: "L Shape", shape: [[1,0,0],[1,0,0], [1,1,0]] },
+            { name: "Cross", shape: [[0,1,0],[1,1,1],[0,1,0]] }
+        ];
+
+        // Fallback only used when nothing else fits
+        const FALLBACK_TEMPLATE = { name: "1x1", shape: [[1]] };
+
+        // --- STATE ---
+        let grid = new Map();
+        let roomIds = new Map();
+        let realizedCells = new Set(); 
+        let roomIdCounter = 0;
+        let player = { x: 0, y: 0 };
+        let camera = { x: 0, y: 0 };
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const hudCounter = document.getElementById('room-counter');
+        const hudPanel = document.getElementById('rooms-panel');
+
+        // --- RESPONSIVE HANDLING ---
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            updateCamera();
+            draw();
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        // --- INITIALIZATION ---
+        function resetGame() {
+            grid.clear();
+            roomIds.clear();
+            realizedCells.clear();
+            roomIdCounter = 0;
+            player = { x: 0, y: 0 };
+            
+            updateHUD(0);
+            expandRoomAt(0, 0);
+            
+            // Ensure canvas size is correct before drawing
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            
+            updateCamera();
+            draw();
+        }
+
+        // --- HUD UPDATE ---
+        function updateHUD(count) {
+            hudCounter.innerText = count;
+            
+            // Trigger animation
+            hudPanel.classList.remove('stat-bump');
+            void hudPanel.offsetWidth; // Trigger reflow
+            hudPanel.classList.add('stat-bump');
+        }
+
+        // --- CORE LOGIC ---
+        function getCell(x, y) { return grid.get(`${x},${y}`); }
+        function setCell(x, y, val) { grid.set(`${x},${y}`, val); }
+        function getRoomId(x, y) { return roomIds.get(`${x},${y}`); }
+
+        function canMoveTo(tx, ty, dx, dy) {
+            if (!grid.has(`${tx},${ty}`)) return false;
+
+            const cVal = getCell(player.x, player.y);
+            const cRoom = getRoomId(player.x, player.y);
+            const tRoom = getRoomId(tx, ty);
+
+            // Same room movement is free
+            if (cRoom === tRoom) return true;
+
+            // Crossing rooms requires specific door alignment
+            if (dx === 1) return cVal === 2;
+            if (dx === -1) return cVal === 4;
+            if (dy === 1) return cVal === 3;
+            if (dy === -1) return cVal === 5;
+
+            return false;
+        }
+
+        function expandRoomAt(targetX, targetY) {
+            if (realizedCells.has(`${targetX},${targetY}`)) return;
+
+            const shuffledTemplates = [...TEMPLATES].sort(() => Math.random() - 0.5);
+            let placed = false;
+            roomIdCounter++;
+            updateHUD(roomIdCounter); // Update UI
+            
+            const newRoomId = roomIdCounter;
+
+            // Try standard templates
+            for (const tmpl of shuffledTemplates) {
+                const shape = tmpl.shape;
+                const h = shape.length;
+                const w = shape[0].length;
+                const anchorPoints = [];
+                
+                for(let r=0; r<h; r++) {
+                    for(let c=0; c<w; c++) {
+                        if (shape[r][c] === 1) anchorPoints.push({r, c});
+                    }
+                }
+                anchorPoints.sort(() => Math.random() - 0.5);
+
+                for (const anchor of anchorPoints) {
+                    const startX = targetX - anchor.c;
+                    const startY = targetY - anchor.r;
+
+                    if (canPlace(shape, startX, startY)) {
+                        place(shape, startX, startY, newRoomId);
+                        addExitsToNewRoom(shape, startX, startY);
+                        placed = true;
+                        break;
+                    }
+                }
+                if (placed) break;
+            }
+
+            // Strict Fallback: Use 1x1 only if no other template fitted
+            if (!placed) {
+                place(FALLBACK_TEMPLATE.shape, targetX, targetY, newRoomId);
+                addExitsToNewRoom(FALLBACK_TEMPLATE.shape, targetX, targetY);
+            }
+        }
+
+        function canPlace(shape, startX, startY) {
+            const h = shape.length;
+            const w = shape[0].length;
+            for(let r=0; r<h; r++) {
+                for(let c=0; c<w; c++) {
+                    if (shape[r][c] === 1) {
+                        const wx = startX + c;
+                        const wy = startY + r;
+                        if (realizedCells.has(`${wx},${wy}`)) return false; 
+                    }
+                }
+            }
+            return true;
+        }
+
+        function place(shape, startX, startY, id) {
+            const h = shape.length;
+            const w = shape[0].length;
+            for(let r=0; r<h; r++) {
+                for(let c=0; c<w; c++) {
+                    if (shape[r][c] === 1) {
+                        const wx = startX + c;
+                        const wy = startY + r;
+                        const current = getCell(wx, wy);
+                        if (!current) setCell(wx, wy, 1);
+                        realizedCells.add(`${wx},${wy}`);
+                        roomIds.set(`${wx},${wy}`, id);
+                    }
+                }
+            }
+        }
+
+        function addExitsToNewRoom(shape, startX, startY) {
+            const h = shape.length;
+            const w = shape[0].length;
+            const candidates = [];
+
+            for(let r=0; r<h; r++) {
+                for(let c=0; c<w; c++) {
+                    if (shape[r][c] === 1) {
+                        const wx = startX + c;
+                        const wy = startY + r;
+                        if (!getCell(wx+1, wy)) candidates.push({x: wx, y: wy, dir: 'Right'});
+                        if (!getCell(wx-1, wy)) candidates.push({x: wx, y: wy, dir: 'Left'});
+                        if (!getCell(wx, wy+1)) candidates.push({x: wx, y: wy, dir: 'Down'});
+                        if (!getCell(wx, wy-1)) candidates.push({x: wx, y: wy, dir: 'Up'});
+                    }
+                }
+            }
+
+            const numExits = Math.max(1, Math.floor(Math.random() * 3) + 1);
+            candidates.sort(() => Math.random() - 0.5);
+
+            let placedCount = 0;
+            for (const cand of candidates) {
+                if (placedCount >= numExits) break;
+                if (getCell(cand.x, cand.y) !== 1) continue;
+
+                if (cand.dir === 'Right' && !getCell(cand.x+1, cand.y)) {
+                    setCell(cand.x, cand.y, 2);   
+                    setCell(cand.x+1, cand.y, 4); 
+                    placedCount++;
+                }
+                else if (cand.dir === 'Left' && !getCell(cand.x-1, cand.y)) {
+                    setCell(cand.x, cand.y, 4);
+                    setCell(cand.x-1, cand.y, 2);
+                    placedCount++;
+                }
+                else if (cand.dir === 'Down' && !getCell(cand.x, cand.y+1)) {
+                    setCell(cand.x, cand.y, 3);
+                    setCell(cand.x, cand.y+1, 5);
+                    placedCount++;
+                }
+                else if (cand.dir === 'Up' && !getCell(cand.x, cand.y-1)) {
+                    setCell(cand.x, cand.y, 5);
+                    setCell(cand.x, cand.y-1, 3);
+                    placedCount++;
+                }
+            }
+        }
+
+        // --- INPUT HANDLING (SWIPE + KEYBOARD + TAP) ---
+
+        function attemptMove(dx, dy) {
+            const targetX = player.x + dx;
+            const targetY = player.y + dy;
+
+            if (canMoveTo(targetX, targetY, dx, dy)) {
+                player.x = targetX;
+                player.y = targetY;
+                
+                if (!realizedCells.has(`${targetX},${targetY}`)) {
+                    expandRoomAt(targetX, targetY);
+                }
+                
+                updateCamera();
+                draw();
+            }
+        }
+
+        // Keyboard
+        window.addEventListener('keydown', (e) => {
+            if (e.key === "ArrowRight") attemptMove(1, 0);
+            if (e.key === "ArrowLeft") attemptMove(-1, 0);
+            if (e.key === "ArrowDown") attemptMove(0, 1);
+            if (e.key === "ArrowUp") attemptMove(0, -1);
+        });
+
+        // Touch logic
+        let touchStartX = 0;
+        let touchStartY = 0;
+
+        canvas.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].clientX;
+            touchStartY = e.changedTouches[0].clientY;
+        }, {passive: false});
+
+        canvas.addEventListener('touchend', (e) => {
+            const touchEndX = e.changedTouches[0].clientX;
+            const touchEndY = e.changedTouches[0].clientY;
+            handleInput(touchEndX, touchEndY);
+        }, {passive: false});
+
+        function handleInput(endX, endY) {
+            const dx = endX - touchStartX;
+            const dy = endY - touchStartY;
+            const absDx = Math.abs(dx);
+            const absDy = Math.abs(dy);
+            const swipeThreshold = 30; // Min pixels to count as swipe
+
+            // 1. SWIPE DETECTION
+            if (Math.max(absDx, absDy) > swipeThreshold) {
+                if (absDx > absDy) {
+                    attemptMove(dx > 0 ? 1 : -1, 0);
+                } else {
+                    attemptMove(0, dy > 0 ? 1 : -1);
+                }
+                return;
+            }
+
+            // 2. TAP DETECTION
+            // If it's a tap, check position relative to screen center
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight / 2;
+            
+            const tapDx = endX - centerX;
+            const tapDy = endY - centerY;
+            
+            // Tiny deadzone in center (20px radius) to prevent misclicks on player
+            if (Math.abs(tapDx) < 20 && Math.abs(tapDy) < 20) return;
+
+            // Determine dominant direction relative to center
+            if (Math.abs(tapDx) > Math.abs(tapDy)) {
+                // Horizontal Tap
+                attemptMove(tapDx > 0 ? 1 : -1, 0);
+            } else {
+                // Vertical Tap
+                attemptMove(0, tapDy > 0 ? 1 : -1);
+            }
+        }
+
+        function updateCamera() {
+            // Center player on screen
+            camera.x = player.x * CELL_SIZE - canvas.width / 2 + CELL_SIZE / 2;
+            camera.y = player.y * CELL_SIZE - canvas.height / 2 + CELL_SIZE / 2;
+        }
+
+        // --- DRAWING ---
+        function draw() {
+            const w = canvas.width;
+            const h = canvas.height;
+
+            // Fill BG
+            ctx.fillStyle = "#111";
+            ctx.fillRect(0, 0, w, h);
+
+            // Determine visible grid range based on canvas size
+            const startCol = Math.floor(camera.x / CELL_SIZE) - 1;
+            const endCol = startCol + (w / CELL_SIZE) + 2;
+            const startRow = Math.floor(camera.y / CELL_SIZE) - 1;
+            const endRow = startRow + (h / CELL_SIZE) + 2;
+
+            ctx.save();
+            ctx.translate(-camera.x, -camera.y);
+
+            // 1. Draw Cells
+            for(let c = startCol; c <= endCol; c++) {
+                for(let r = startRow; r <= endRow; r++) {
+                    const x = c * CELL_SIZE;
+                    const y = r * CELL_SIZE;
+                    const val = getCell(c, r);
+                    
+                    if (val) {
+                        ctx.fillStyle = realizedCells.has(`${c},${r}`) ? "#fff" : "#222";
+                        // We use CELL_SIZE + 0.5 to slightly overlap and prevent hairline gaps (gray lines)
+                        ctx.fillRect(x, y, CELL_SIZE + 0.5, CELL_SIZE + 0.5);
+
+                        // Symbols
+                        let symbol = "";
+                        
+                        if (val === 2) symbol = "→";
+                        if (val === 3) symbol = "↓";
+                        if (val === 4) symbol = "←";
+                        if (val === 5) symbol = "↑";
+
+                        if(symbol) {
+                            ctx.textAlign = "center";
+                            ctx.textBaseline = "middle";
+                            ctx.fillStyle = "#d63384";
+                            ctx.font = "bold 30px Arial";
+                            ctx.fillText(symbol, x + CELL_SIZE/2, y + CELL_SIZE/2);
+                        }
+                    }
+                }
+            }
+
+            // 2. Draw Walls (Red Lines)
+            ctx.strokeStyle = "#c0392b"; // Brick Red
+            ctx.lineWidth = 4;
+            ctx.lineCap = "round";
+            ctx.beginPath();
+
+            for(let c = startCol; c <= endCol; c++) {
+                for(let r = startRow; r <= endRow; r++) {
+                    if (!getCell(c, r)) continue;
+
+                    const myRoom = getRoomId(c, r);
+                    const x = c * CELL_SIZE;
+                    const y = r * CELL_SIZE;
+
+                    // Right Neighbor
+                    const rightRoom = getRoomId(c+1, r);
+                    if (myRoom !== undefined) {
+                        if (rightRoom !== myRoom) {
+                            const myVal = getCell(c,r);
+                            const rightVal = getCell(c+1, r);
+                            const hasDoor = (myVal === 2) || (rightVal === 4);
+                            
+                            if (!hasDoor) {
+                                ctx.moveTo(x + CELL_SIZE, y);
+                                ctx.lineTo(x + CELL_SIZE, y + CELL_SIZE);
+                            }
+                        }
+                    }
+
+                    // Bottom Neighbor
+                    const downRoom = getRoomId(c, r+1);
+                    if (myRoom !== undefined) {
+                        if (downRoom !== myRoom) {
+                            const myVal = getCell(c,r);
+                            const downVal = getCell(c, r+1);
+                            const hasDoor = (myVal === 3) || (downVal === 5);
+
+                            if (!hasDoor) {
+                                ctx.moveTo(x, y + CELL_SIZE);
+                                ctx.lineTo(x + CELL_SIZE, y + CELL_SIZE);
+                            }
+                        }
+                    }
+                    
+                    // Left Edge (Void)
+                    if (!grid.has(`${c-1},${r}`) && myRoom !== undefined) {
+                         if (getCell(c,r) !== 4) {
+                             ctx.moveTo(x, y);
+                             ctx.lineTo(x, y + CELL_SIZE);
+                         }
+                    }
+                     // Top Edge (Void)
+                     if (!grid.has(`${c},${r-1}`) && myRoom !== undefined) {
+                         if (getCell(c,r) !== 5) {
+                             ctx.moveTo(x, y);
+                             ctx.lineTo(x + CELL_SIZE, y);
+                         }
+                    }
+                }
+            }
+            ctx.stroke();
+
+            // 3. Draw Player
+            ctx.fillStyle = "#e74c3c";
+            ctx.fillRect(
+                player.x * CELL_SIZE + 15, 
+                player.y * CELL_SIZE + 15, 
+                CELL_SIZE - 30, 
+                CELL_SIZE - 30
+            );
+
+            ctx.restore();
+        }
+
+        // Init
+        resetGame();
+
+    </script>
+</body>
+</html>
