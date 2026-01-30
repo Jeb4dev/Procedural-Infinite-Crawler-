@@ -672,13 +672,22 @@
         // --- TEMPLATES ---
         const TEMPLATES = [
             { name: "3x3 Room", shape: [[1,1,1],[1,1,1],[1,1,1]] },
+            { name: "3x2 Room", shape: [[1,1,1],[1,1,1]] },
+            { name: "2x3 Room", shape: [[1,1],[1,1],[1,1]] },
             { name: "2x2 Room", shape: [[1,1],[1,1]] },
             { name: "Hallway H", shape: [[1,1,1]] },
             { name: "Hallway V", shape: [[1],[1],[1]] },
             { name: "U Shape", shape: [[1,0,1],[1,1,1]] },
+            { name: "n Shape", shape: [[1,1,1],[1,0,1]] },
             { name: "O Shape", shape: [[1,1,1],[1,0,1], [1,1,1]] },
             { name: "L Shape", shape: [[1,0,0],[1,0,0], [1,1,0]] },
-            { name: "Cross", shape: [[0,1,0],[1,1,1],[0,1,0]] }
+            { name: "J Shape", shape: [[0,0,1],[0,0,1], [0,1,1]] },
+            { name: "T Shape", shape: [[1,1,1],[0,1,0],[0,1,0]] },
+            { name: "H Shape", shape: [[1,0,1],[1,1,1],[1,0,1]] },
+            { name: "Cross", shape: [[0,1,0],[1,1,1],[0,1,0]] },
+            { name: "Z Shape", shape: [[1,1,0],[0,1,1]] },
+            { name: "S Shape", shape: [[0,1,1],[1,1,0]] },
+            { name: "Corner", shape: [[1,1],[1,0]] }
         ];
         const FALLBACK_TEMPLATE = { name: "1x1", shape: [[1]] };
 
@@ -979,7 +988,11 @@
             SoundManager.play('damage');
             spawnParticles(player.x, player.y, "#9933ff");
 
-            // Stun Enemy
+            // Stun Enemy: set lastMove to current time + 2000ms delay.
+            // Since updateEnemy loop checks (timestamp - lastMove > interval),
+            // setting lastMove into the future makes (timestamp - lastMove) negative, thus < interval.
+            // This effectively pauses the enemy logic for 2 seconds + the interval time.
+            // Using performance.now() is safe here as it matches the requestAnimationFrame timestamp source.
             enemy.lastMove = performance.now() + 2000;
 
             ui.energyPanel.classList.remove('stat-bump');
