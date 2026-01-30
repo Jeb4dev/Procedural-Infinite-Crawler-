@@ -9,6 +9,10 @@
     <meta name="description" content="Explore an infinite, procedurally generated dungeon. Navigate room by room, solve layout puzzles, and survive the endless void. Mobile-friendly web game.">
     
     <style>
+        * {
+            box-sizing: border-box;
+        }
+
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: #050505;
@@ -27,7 +31,10 @@
             height: 100%;
         }
 
-        /* HUD Styles */
+        /* ============================================
+           NEON CYBERPUNK HUD SYSTEM
+           ============================================ */
+
         #hud-layer {
             position: fixed;
             top: 20px;
@@ -40,60 +47,114 @@
         }
 
         .hud-panel {
-            background: rgba(10, 10, 10, 0.85);
+            background: rgba(10, 10, 10, 0.9);
             border: 2px solid #d63384;
             border-left: 5px solid #d63384;
-            padding: 10px 15px;
+            padding: 12px 18px;
             border-radius: 4px;
-            box-shadow: 0 0 15px rgba(214, 51, 132, 0.3), inset 0 0 20px rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(5px);
-            -webkit-backdrop-filter: blur(5px);
-            min-width: 140px;
+            box-shadow:
+                0 0 20px rgba(214, 51, 132, 0.4),
+                inset 0 0 30px rgba(0, 0, 0, 0.6),
+                0 4px 15px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            min-width: 160px;
             transform: skewX(-5deg);
-            transition: transform 0.1s;
+            transition: transform 0.1s, box-shadow 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hud-panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(214, 51, 132, 0.8), transparent);
+        }
+
+        .hud-panel::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, rgba(214, 51, 132, 0.05) 0%, transparent 50%);
+            pointer-events: none;
         }
 
         /* Cyan theme for Energy/Data */
         .hud-panel.cyan {
             border-color: #00f3ff;
-            box-shadow: 0 0 15px rgba(0, 243, 255, 0.3), inset 0 0 20px rgba(0, 0, 0, 0.5);
+            box-shadow:
+                0 0 20px rgba(0, 243, 255, 0.4),
+                inset 0 0 30px rgba(0, 0, 0, 0.6),
+                0 4px 15px rgba(0, 0, 0, 0.5);
         }
-        .hud-panel.cyan .hud-label { color: #00f3ff; text-shadow: 0 0 5px rgba(0, 243, 255, 0.5); }
+        .hud-panel.cyan::before {
+            background: linear-gradient(90deg, transparent, rgba(0, 243, 255, 0.8), transparent);
+        }
+        .hud-panel.cyan::after {
+            background: linear-gradient(135deg, rgba(0, 243, 255, 0.05) 0%, transparent 50%);
+        }
+        .hud-panel.cyan .hud-label {
+            color: #00f3ff;
+            text-shadow: 0 0 8px rgba(0, 243, 255, 0.6);
+        }
 
         .hud-label {
             font-family: 'Courier New', monospace;
             font-size: 10px;
             text-transform: uppercase;
-            letter-spacing: 2px;
+            letter-spacing: 3px;
             color: #ff80bf;
-            margin-bottom: 5px;
-            text-shadow: 0 0 5px rgba(214, 51, 132, 0.5);
+            margin-bottom: 6px;
+            text-shadow: 0 0 8px rgba(214, 51, 132, 0.6);
+            position: relative;
+            z-index: 1;
         }
 
         .hud-value {
             font-family: 'Segoe UI', sans-serif;
-            font-size: 28px;
+            font-size: 32px;
             font-weight: 800;
             color: #fff;
-            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+            text-shadow: 0 0 15px rgba(255, 255, 255, 0.6);
             line-height: 1;
+            position: relative;
+            z-index: 1;
         }
 
         /* Energy Bar */
         .energy-bar-container {
             width: 100%;
-            height: 6px;
-            background: #222;
-            margin-top: 5px;
+            height: 8px;
+            background: rgba(30, 30, 30, 0.8);
+            margin-top: 8px;
             position: relative;
             overflow: hidden;
+            border-radius: 2px;
+            border: 1px solid rgba(0, 243, 255, 0.3);
         }
         .energy-fill {
             height: 100%;
-            background: #00f3ff;
+            background: linear-gradient(90deg, #00f3ff, #00d4ff);
             width: 100%;
-            box-shadow: 0 0 10px #00f3ff;
+            box-shadow: 0 0 15px #00f3ff, inset 0 0 5px rgba(255,255,255,0.3);
             transition: width 0.2s;
+            position: relative;
+        }
+        .energy-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50%;
+            background: linear-gradient(to bottom, rgba(255,255,255,0.3), transparent);
         }
 
         @keyframes pulse-neon {
@@ -106,114 +167,425 @@
             animation: pulse-neon 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
 
-        /* Gacha UI */
+        /* ============================================
+           GACHA / DECODE CORE OVERLAY
+           ============================================ */
+
         #gacha-btn {
-            position: fixed; top: 20px; right: 20px;
-            z-index: 150; pointer-events: auto;
-            background: #d63384; color: #fff;
-            border: none; 
-            padding: 8px 12px; /* Smaller padding */
-            font-size: 11px; /* Smaller font */
-            font-family: 'Courier New', monospace; font-weight: bold;
-            cursor: pointer; clip-path: polygon(10% 0, 100% 0, 90% 100%, 0% 100%);
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 150;
+            pointer-events: auto;
+            background: rgba(10, 10, 10, 0.9);
+            color: #d63384;
+            border: 2px solid #d63384;
+            border-left: 5px solid #d63384;
+            padding: 10px 20px;
+            font-size: 11px;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            cursor: pointer;
+            transform: skewX(-5deg);
             transition: all 0.2s;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            box-shadow: 0 0 15px rgba(214, 51, 132, 0.5);
+            letter-spacing: 2px;
+            box-shadow:
+                0 0 20px rgba(214, 51, 132, 0.4),
+                inset 0 0 20px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+        }
+
+        #gacha-btn:hover:not(:disabled) {
+            background: rgba(214, 51, 132, 0.2);
+            box-shadow:
+                0 0 30px rgba(214, 51, 132, 0.6),
+                inset 0 0 20px rgba(214, 51, 132, 0.1);
         }
 
         #gacha-btn:disabled { 
-            background: #444; color: #888; cursor: not-allowed; 
+            background: rgba(30, 30, 30, 0.9);
+            border-color: #444;
+            color: #555;
+            cursor: not-allowed;
             box-shadow: none;
         }
         
-        #gacha-btn:active { transform: scale(0.95); }
+        #gacha-btn:active:not(:disabled) {
+            transform: skewX(-5deg) scale(0.95);
+        }
 
         #gacha-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.95);
-            display: none; flex-direction: column; justify-content: center; align-items: center;
-            z-index: 300; pointer-events: auto;
-            backdrop-filter: blur(10px);
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 5, 5, 0.97);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 300;
+            pointer-events: auto;
+            backdrop-filter: blur(15px);
+        }
+
+        .gacha-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px;
+        }
+
+        .gacha-title {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            color: #d63384;
+            text-shadow: 0 0 10px rgba(214, 51, 132, 0.6);
+            margin-bottom: 40px;
         }
 
         .pull-anim {
-            width: 200px; height: 200px;
-            border: 5px solid #fff; border-radius: 50%;
-            animation: rotate 1s infinite linear;
-            box-shadow: 0 0 50px #00f3ff;
-            margin-bottom: 30px;
-            transition: box-shadow 0.3s;
+            width: 180px;
+            height: 180px;
+            border: 4px solid #d63384;
+            border-radius: 50%;
+            animation: rotate 1.5s infinite linear;
+            box-shadow:
+                0 0 60px rgba(214, 51, 132, 0.5),
+                inset 0 0 40px rgba(214, 51, 132, 0.2);
+            margin-bottom: 40px;
+            transition: all 0.5s;
+            position: relative;
         }
 
-        @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .pull-anim::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 60px;
+            height: 60px;
+            background: rgba(214, 51, 132, 0.3);
+            border-radius: 50%;
+            box-shadow: 0 0 30px rgba(214, 51, 132, 0.5);
+        }
 
-        .reward-text { font-family: 'Courier New', monospace; font-size: 24px; margin-top: 10px; font-weight: bold; text-align: center; color: #fff; line-height: 1.5; }
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .reward-panel {
+            background: rgba(10, 10, 10, 0.9);
+            border: 2px solid #d63384;
+            border-left: 5px solid #d63384;
+            padding: 25px 40px;
+            border-radius: 4px;
+            box-shadow:
+                0 0 30px rgba(214, 51, 132, 0.4),
+                inset 0 0 30px rgba(0, 0, 0, 0.6);
+            transform: skewX(-5deg);
+            text-align: center;
+            min-width: 280px;
+        }
+
+        .reward-text {
+            font-family: 'Courier New', monospace;
+            font-size: 22px;
+            font-weight: bold;
+            text-align: center;
+            color: #fff;
+            line-height: 1.6;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+
+        .gacha-hint {
+            margin-top: 30px;
+            color: #555;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        /* ============================================
+           GAME OVER SCREEN
+           ============================================ */
 
         #game-over-screen {
             position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.85);
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 5, 5, 0.95);
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
             z-index: 200;
-            backdrop-filter: blur(8px);
+            backdrop-filter: blur(12px);
             opacity: 0;
-            visibility: hidden; /* Hide completely when not active */
-            transition: opacity 0.5s, visibility 0s 0.5s; /* Delay hiding visibility until fade out is done */
+            visibility: hidden;
+            transition: opacity 0.5s, visibility 0s 0.5s;
         }
         
         #game-over-screen.visible {
             opacity: 1;
             visibility: visible;
-            transition: opacity 0.5s, visibility 0s; /* Show immediately for fade in */
+            transition: opacity 0.5s, visibility 0s;
             pointer-events: auto;
+        }
+
+        .game-over-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .go-glitch-wrapper {
+            position: relative;
         }
 
         .go-title {
             font-family: 'Courier New', monospace;
-            font-size: 40px;
+            font-size: 48px;
             color: #ff3333;
-            text-shadow: 0 0 20px #ff0000;
-            margin-bottom: 20px;
+            text-shadow:
+                0 0 30px rgba(255, 0, 0, 0.8),
+                0 0 60px rgba(255, 0, 0, 0.4),
+                3px 0 0 #00f3ff,
+                -3px 0 0 #d63384;
             font-weight: bold;
-            letter-spacing: 5px;
+            letter-spacing: 8px;
+            text-transform: uppercase;
+            animation: glitch 2s infinite;
         }
 
-        .go-score {
-            font-family: sans-serif;
+        @keyframes glitch {
+            0%, 90%, 100% {
+                text-shadow:
+                    0 0 30px rgba(255, 0, 0, 0.8),
+                    0 0 60px rgba(255, 0, 0, 0.4),
+                    3px 0 0 #00f3ff,
+                    -3px 0 0 #d63384;
+            }
+            92% {
+                text-shadow:
+                    0 0 30px rgba(255, 0, 0, 0.8),
+                    0 0 60px rgba(255, 0, 0, 0.4),
+                    -5px 2px 0 #00f3ff,
+                    5px -2px 0 #d63384;
+            }
+            94% {
+                text-shadow:
+                    0 0 30px rgba(255, 0, 0, 0.8),
+                    0 0 60px rgba(255, 0, 0, 0.4),
+                    5px -1px 0 #00f3ff,
+                    -5px 1px 0 #d63384;
+            }
+        }
+
+        .go-subtitle {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            margin-bottom: 10px;
+        }
+
+        .go-stats-panel {
+            background: rgba(10, 10, 10, 0.9);
+            border: 2px solid #ff3333;
+            border-left: 5px solid #ff3333;
+            padding: 25px 40px;
+            border-radius: 4px;
+            box-shadow:
+                0 0 30px rgba(255, 51, 51, 0.3),
+                inset 0 0 30px rgba(0, 0, 0, 0.6);
+            transform: skewX(-5deg);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            min-width: 280px;
+        }
+
+        .go-stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 51, 51, 0.2);
+        }
+
+        .go-stat-row:last-child {
+            border-bottom: none;
+        }
+
+        .go-stat-label {
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            color: #ff8080;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .go-stat-value {
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 24px;
+            font-weight: 800;
             color: #fff;
-            font-size: 18px;
-            margin-bottom: 40px;
-            opacity: 0.8;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
         }
 
         .btn {
-            background: rgba(0, 0, 0, 0.6);
+            background: rgba(10, 10, 10, 0.9);
             color: #d63384;
-            border: 1px solid #d63384;
-            padding: 12px 24px;
+            border: 2px solid #d63384;
+            border-left: 5px solid #d63384;
+            padding: 15px 40px;
             border-radius: 4px;
             font-family: 'Courier New', monospace;
             font-weight: bold;
             font-size: 14px;
             cursor: pointer;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 3px;
             transition: all 0.2s;
-            box-shadow: 0 0 10px rgba(214, 51, 132, 0.2);
+            box-shadow:
+                0 0 20px rgba(214, 51, 132, 0.3),
+                inset 0 0 20px rgba(0, 0, 0, 0.5);
+            transform: skewX(-5deg);
+            margin-top: 20px;
         }
         
         .btn:hover {
-            background: #d63384;
-            color: #000;
-            box-shadow: 0 0 20px rgba(214, 51, 132, 0.6);
+            background: rgba(214, 51, 132, 0.2);
+            box-shadow:
+                0 0 40px rgba(214, 51, 132, 0.5),
+                inset 0 0 20px rgba(214, 51, 132, 0.1);
+            color: #fff;
+        }
+
+        .btn:active {
+            transform: skewX(-5deg) scale(0.95);
+        }
+
+        /* Scanline effect for overlays */
+        .scanlines {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.1) 0px,
+                rgba(0, 0, 0, 0.1) 1px,
+                transparent 1px,
+                transparent 3px
+            );
+            z-index: 999;
+            opacity: 0.3;
+        }
+
+        /* Corner decorations */
+        .corner-decor {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #d63384;
+            opacity: 0.5;
+        }
+        .corner-decor.tl { top: 20px; left: 20px; border-right: none; border-bottom: none; }
+        .corner-decor.tr { top: 20px; right: 20px; border-left: none; border-bottom: none; }
+        .corner-decor.bl { bottom: 20px; left: 20px; border-right: none; border-top: none; }
+        .corner-decor.br { bottom: 20px; right: 20px; border-left: none; border-top: none; }
+
+        /* ============================================
+           MOBILE OPTIMIZATIONS
+           ============================================ */
+        @media (max-width: 768px) {
+            /* HUD Adjustment */
+            #hud-layer {
+                top: 15px;
+                left: 15px;
+                gap: 10px;
+                transform: scale(0.9);
+                transform-origin: top left;
+            }
+
+            .hud-panel {
+                min-width: unset; /* Let it shrink if needed */
+                padding: 10px 15px;
+            }
+
+            /* Gacha Button Repositioning */
+            #gacha-btn {
+                top: auto;
+                bottom: 30px;
+                left: 50%;
+                right: auto;
+                transform: translateX(-50%) skewX(-5deg);
+                width: 85%;
+                max-width: 400px;
+                padding: 16px;
+                font-size: 14px;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                background: rgba(10, 10, 10, 0.95);
+                box-shadow:
+                    0 0 20px rgba(214, 51, 132, 0.6),
+                    inset 0 0 20px rgba(0, 0, 0, 0.5);
+                z-index: 160; /* Ensure it's above everything */
+            }
+
+            #gacha-btn:active:not(:disabled) {
+                transform: translateX(-50%) skewX(-5deg) scale(0.95);
+            }
+
+            /* Gacha Overlay Adjustments */
+            .gacha-container {
+                width: 90%;
+                padding: 20px;
+            }
+
+            .pull-anim {
+                width: 140px;
+                height: 140px;
+                margin-bottom: 30px;
+            }
+
+            .reward-panel {
+                min-width: unset;
+                width: 100%;
+                padding: 20px;
+            }
+
+            /* Game Over Adjustments */
+            .go-title {
+                font-size: 32px;
+            }
+
+            .go-stats-panel {
+                min-width: 80%;
+                padding: 20px;
+            }
         }
     </style>
 </head>
 <body>
+    <!-- Scanline effect overlay -->
+    <div class="scanlines"></div>
 
     <div id="hud-layer">
         <!-- Room Counter -->
@@ -225,9 +597,11 @@
         <!-- Energy / Score -->
         <div class="hud-panel cyan" id="energy-panel">
             <div class="hud-label">System Integrity</div>
-            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
-                <div class="hud-value" id="energy-val" style="font-size: 20px;">100%</div>
-                <div style="font-size: 12px; color:#aaa; margin-bottom:3px;">DATA: <span id="data-score" style="color:white; font-weight:bold;">0</span></div>
+            <div style="display:flex; justify-content:space-between; align-items:flex-end; gap: 20px;">
+                <div class="hud-value" id="energy-val" style="font-size: 24px;">100%</div>
+                <div style="font-family: 'Courier New', monospace; font-size: 10px; color:#00f3ff; margin-bottom:5px; text-transform: uppercase; letter-spacing: 1px;">
+                    Data: <span id="data-score" style="color:white; font-weight:bold; font-size: 14px;">0</span>
+                </div>
             </div>
             <div class="energy-bar-container">
                 <div class="energy-fill" id="energy-fill"></div>
@@ -236,21 +610,56 @@
     </div>
 
     <!-- Gacha Button -->
-    <button id="gacha-btn" onclick="openGacha()" disabled>DECODE CORE (10 DATA)</button>
+    <button id="gacha-btn" onclick="openGacha()" disabled>◆ Decode Core (10 Data)</button>
 
     <!-- Gacha Overlay -->
     <div id="gacha-overlay" onclick="closeGacha()">
-        <div id="pull-visual" class="pull-anim"></div>
-        <div id="pull-result" class="reward-text">DECODING...</div>
-        <div style="margin-top: 20px; color: #888; font-size: 12px;">TAP TO RETURN</div>
+        <div class="corner-decor tl"></div>
+        <div class="corner-decor tr"></div>
+        <div class="corner-decor bl"></div>
+        <div class="corner-decor br"></div>
+
+        <div class="gacha-container" onclick="event.stopPropagation()">
+            <div class="gacha-title">◆ Core Decryption ◆</div>
+            <div id="pull-visual" class="pull-anim"></div>
+            <div class="reward-panel" id="reward-box" style="display:none;">
+                <div id="pull-result" class="reward-text">DECODING...</div>
+            </div>
+            <div class="gacha-hint" id="gacha-hint">Processing Signal...</div>
+        </div>
     </div>
 
     <canvas id="gameCanvas"></canvas>
 
     <div id="game-over-screen">
-        <div class="go-title">SYSTEM FAILURE</div>
-        <div class="go-score">Energy Depleted. Data lost.</div>
-        <button class="btn" onclick="resetGame()">Reboot System</button>
+        <div class="corner-decor tl"></div>
+        <div class="corner-decor tr" style="border-color: #ff3333;"></div>
+        <div class="corner-decor bl" style="border-color: #ff3333;"></div>
+        <div class="corner-decor br"></div>
+
+        <div class="game-over-container">
+            <div class="go-glitch-wrapper">
+                <div class="go-title">SYSTEM FAILURE</div>
+            </div>
+            <div class="go-subtitle">◆ Critical Error Detected ◆</div>
+
+            <div class="go-stats-panel">
+                <div class="go-stat-row">
+                    <span class="go-stat-label">Sectors Found</span>
+                    <span class="go-stat-value" id="go-rooms">0</span>
+                </div>
+                <div class="go-stat-row">
+                    <span class="go-stat-label">Data Collected</span>
+                    <span class="go-stat-value" id="go-data">0</span>
+                </div>
+                <div class="go-stat-row">
+                    <span class="go-stat-label">Status</span>
+                    <span class="go-stat-value" style="font-size: 16px; color: #ff5555;">TERMINATED</span>
+                </div>
+            </div>
+
+            <button class="btn" onclick="resetGame()">◆ Reboot System ◆</button>
+        </div>
     </div>
 
     <script>
@@ -488,11 +897,15 @@
             ui.energyFill.style.width = Math.max(0, energy) + "%";
             
             if (energy < 20) {
-                ui.energyFill.style.background = "#ff3333";
-                ui.energyFill.style.boxShadow = "0 0 10px #ff3333";
+                ui.energyFill.style.background = "linear-gradient(90deg, #ff3333, #ff6666)";
+                ui.energyFill.style.boxShadow = "0 0 15px #ff3333, inset 0 0 5px rgba(255,255,255,0.3)";
+                document.getElementById('energy-panel').style.borderColor = '#ff3333';
+                document.getElementById('energy-panel').style.boxShadow = '0 0 20px rgba(255, 51, 51, 0.4), inset 0 0 30px rgba(0, 0, 0, 0.6), 0 4px 15px rgba(0, 0, 0, 0.5)';
             } else {
-                ui.energyFill.style.background = "#00f3ff";
-                ui.energyFill.style.boxShadow = "0 0 10px #00f3ff";
+                ui.energyFill.style.background = "linear-gradient(90deg, #00f3ff, #00d4ff)";
+                ui.energyFill.style.boxShadow = "0 0 15px #00f3ff, inset 0 0 5px rgba(255,255,255,0.3)";
+                document.getElementById('energy-panel').style.borderColor = '#00f3ff';
+                document.getElementById('energy-panel').style.boxShadow = '0 0 20px rgba(0, 243, 255, 0.4), inset 0 0 30px rgba(0, 0, 0, 0.6), 0 4px 15px rgba(0, 0, 0, 0.5)';
             }
 
             if (dataScore >= GACHA_COST) {
@@ -505,6 +918,13 @@
         function triggerGameOver() {
             isGameOver = true;
             SoundManager.play('die');
+
+            // Update game over stats
+            const goRooms = document.getElementById('go-rooms');
+            const goData = document.getElementById('go-data');
+            if (goRooms) goRooms.innerText = roomIdCounter;
+            if (goData) goData.innerText = dataScore;
+
             ui.gameOver.classList.add('visible');
         }
 
@@ -517,10 +937,19 @@
             SoundManager.play('gacha');
 
             ui.gachaOverlay.style.display = 'flex';
-            ui.pullResult.innerText = "DECODING CORE...";
-            ui.pullResult.style.color = "#fff";
-            ui.pullVisual.style.boxShadow = "0 0 50px #fff";
-            ui.pullVisual.style.borderColor = "#fff";
+
+            // Reset to decoding state
+            const rewardBox = document.getElementById('reward-box');
+            const gachaHint = document.getElementById('gacha-hint');
+
+            if (rewardBox) rewardBox.style.display = 'none';
+            if (gachaHint) {
+                gachaHint.style.display = 'block';
+                gachaHint.innerText = 'Processing Signal...';
+            }
+
+            ui.pullVisual.style.boxShadow = "0 0 60px rgba(214, 51, 132, 0.5), inset 0 0 40px rgba(214, 51, 132, 0.2)";
+            ui.pullVisual.style.borderColor = "#d63384";
 
             setTimeout(() => {
                 const roll = Math.random();
@@ -533,17 +962,22 @@
                 activeColor = item.color;
                 unlockedSkins.add(item.name);
                 
-                ui.pullResult.innerHTML = `<span style="color:${item.color}">${item.rarity.toUpperCase()}:<br>${item.name}</span><br><span style="font-size:14px; color:#aaa">CORE EQUIPPED</span>`;
-                ui.pullVisual.style.boxShadow = `0 0 80px ${item.color}`;
+                // Show reward panel
+                if (rewardBox) rewardBox.style.display = 'block';
+                if (gachaHint) gachaHint.innerText = 'Tap anywhere to continue';
+
+                ui.pullResult.innerHTML = `<span style="color:${item.color}; font-size: 12px; letter-spacing: 2px;">${item.rarity.toUpperCase()}</span><br><span style="font-size:26px; color:${item.color}; text-shadow: 0 0 20px ${item.color};">${item.name}</span><br><span style="font-size:11px; color:#666; letter-spacing: 1px; margin-top: 10px; display: inline-block;">◆ CORE EQUIPPED ◆</span>`;
+                ui.pullVisual.style.boxShadow = `0 0 80px ${item.color}, inset 0 0 40px ${item.color}`;
                 ui.pullVisual.style.borderColor = item.color;
                 
                 SoundManager.play('collect');
                 
-            }, 1000);
+            }, 1200);
         }
 
         function closeGacha() {
-            if (ui.pullResult.innerText !== "DECODING CORE...") {
+            const rewardBox = document.getElementById('reward-box');
+            if (rewardBox && rewardBox.style.display !== 'none') {
                 ui.gachaOverlay.style.display = 'none';
             }
         }
