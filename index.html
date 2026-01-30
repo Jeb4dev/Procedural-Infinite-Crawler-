@@ -445,6 +445,12 @@
             text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
         }
 
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
         .btn {
             background: rgba(10, 10, 10, 0.9);
             color: #d63384;
@@ -463,7 +469,6 @@
                 0 0 20px rgba(214, 51, 132, 0.3),
                 inset 0 0 20px rgba(0, 0, 0, 0.5);
             transform: skewX(-5deg);
-            margin-top: 20px;
         }
         
         .btn:hover {
@@ -572,6 +577,7 @@
         <div class="hud-panel" id="rooms-panel">
             <div class="hud-label">Sectors Found</div>
             <div class="hud-value" id="room-counter">0</div>
+            <div class="hud-label" id="high-score" style="font-size: 10px; margin-top: 5px; color: #888;">BEST: 0</div>
         </div>
         
         <!-- Energy / Score -->
@@ -586,6 +592,7 @@
             <div class="energy-bar-container">
                 <div class="energy-fill" id="energy-fill"></div>
             </div>
+            <div class="hud-label" id="active-buff" style="font-size: 9px; margin-top: 8px; color: #888; letter-spacing: 1px;">SYSTEM: NORMAL</div>
         </div>
     </div>
 
@@ -604,6 +611,7 @@
             <div id="pull-visual" class="pull-anim"></div>
             <div class="reward-panel" id="reward-box" style="display:none;">
                 <div id="pull-result" class="reward-text">DECODING...</div>
+                <div id="pull-desc" style="font-family: sans-serif; font-size: 12px; color: #aaa; margin-top: 8px; text-transform: uppercase; letter-spacing: 1px;"></div>
             </div>
             <div class="gacha-hint" id="gacha-hint">Processing Signal...</div>
         </div>
@@ -632,24 +640,35 @@
                     <span class="go-stat-label">Data Collected</span>
                     <span class="go-stat-value" id="go-data">0</span>
                 </div>
+                <!-- High Score Row -->
+                <div class="go-stat-row">
+                    <span class="go-stat-label">Highest Sector</span>
+                    <span class="go-stat-value" id="go-high-score" style="color:#d63384">0</span>
+                </div>
                 <div class="go-stat-row">
                     <span class="go-stat-label">Status</span>
                     <span class="go-stat-value" style="font-size: 16px; color: #ff5555;">TERMINATED</span>
                 </div>
             </div>
 
-            <button class="btn" onclick="resetGame()">◆ Reboot System ◆</button>
+            <div class="btn-group">
+                <button class="btn" onclick="resetGame()">◆ Reboot System ◆</button>
+                <button class="btn" id="share-btn" onclick="shareScore()">Share Log</button>
+            </div>
         </div>
     </div>
 
     <script>
         // --- CONFIGURATION ---
         const CELL_SIZE = 60; 
-        const ENERGY_COST_MOVE = 1;
-        const ENERGY_GAIN_ITEM = 15;
-        const MAX_ENERGY = 100;
+        const BASE_ENERGY_COST = 1;
+        const BASE_ENERGY_GAIN = 15;
+        const BASE_MAX_ENERGY = 100;
         const GACHA_COST = 10;
-        
+        const ENEMY_DAMAGE = 25;
+        const ENEMY_SPAWN_ROOM = 5;
+        const BASE_ITEM_CHANCE = 0.15;
+
         // --- TEMPLATES ---
         const TEMPLATES = [
             { name: "3x3 Room", shape: [[1,1,1],[1,1,1],[1,1,1]] },
@@ -663,16 +682,16 @@
         ];
         const FALLBACK_TEMPLATE = { name: "1x1", shape: [[1]] };
 
-        // --- LOOT TABLE ---
+        // --- LOOT TABLE WITH BUFFS ---
         const LOOT_TABLE = [
-            { name: "Default Red", color: "#e74c3c", rarity: "Common" },
-            { name: "Neon Cyan", color: "#00f3ff", rarity: "Common" },
-            { name: "Plasma Pink", color: "#ff00ff", rarity: "Rare" },
-            { name: "Acid Green", color: "#39ff14", rarity: "Rare" },
-            { name: "Solar Orange", color: "#ff9900", rarity: "Rare" },
-            { name: "Deep Violet", color: "#9933ff", rarity: "Rare" },
-            { name: "Gold Void", color: "#ffd700", rarity: "Legendary" },
-            { name: "Pure White", color: "#ffffff", rarity: "Legendary" }
+            { name: "Default Red", color: "#e74c3c", rarity: "Common", desc: "No Active Buffs", buff: {} },
+            { name: "Neon Cyan", color: "#00f3ff", rarity: "Common", desc: "Movement Efficiency +20%", buff: { moveCost: 0.8 } },
+            { name: "Plasma Pink", color: "#ff00ff", rarity: "Rare", desc: "Data Mining +1", buff: { dataBonus: 1 } },
+            { name: "Acid Green", color: "#39ff14", rarity: "Rare", desc: "Recharge Rate +50%", buff: { energyMult: 1.5 } },
+            { name: "Solar Orange", color: "#ff9900", rarity: "Rare", desc: "Max Capacity +50%", buff: { maxEnergy: 150 } },
+            { name: "Deep Violet", color: "#9933ff", rarity: "Rare", desc: "Stealth Mode (Enemy Slow)", buff: { enemySlow: 1.2 } },
+            { name: "Gold Void", color: "#ffd700", rarity: "Legendary", desc: "Loot Radar (More Items)", buff: { lootChance: 0.10 } }, // +10%
+            { name: "Pure White", color: "#ffffff", rarity: "Legendary", desc: "System Overclock (All Stats)", buff: { moveCost: 0.9, energyMult: 1.2, dataBonus: 1 } }
         ];
 
         // --- AUDIO SYSTEM ---
@@ -723,6 +742,15 @@
                     osc.start(t);
                     osc.stop(t + 0.2);
                 }
+                else if (type === 'damage') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(150, t);
+                    osc.frequency.exponentialRampToValueAtTime(50, t + 0.3);
+                    gain.gain.setValueAtTime(0.2, t);
+                    gain.gain.linearRampToValueAtTime(0, t + 0.3);
+                    osc.start(t);
+                    osc.stop(t + 0.3);
+                }
                 else if (type === 'die') {
                     osc.type = 'sawtooth';
                     osc.frequency.setValueAtTime(400, t);
@@ -764,7 +792,11 @@
         let dataScore = 0;
         let isGameOver = false;
         
-        let activeColor = "#e74c3c";
+        // High Score (Persistent)
+        let highScore = parseInt(localStorage.getItem('dungeon_crawler_highscore')) || 0;
+
+        // Active Core (Default Red)
+        let activeCore = LOOT_TABLE[0];
         let unlockedSkins = new Set(["Default Red"]);
         
         let cellSpawnTime = new Map(); 
@@ -774,24 +806,35 @@
         let player = { x: 0, y: 0 }; 
         let camera = { x: 0, y: 0 }; 
         
+        // Enemy State
+        let enemy = { x: 0, y: 0, active: false, lastMove: 0, interval: 600 };
+        let visualEnemy = { x: 0, y: 0 };
+
         let canvas, ctx;
         let ui = {
             rooms: document.getElementById('room-counter'),
             roomPanel: document.getElementById('rooms-panel'),
+            highScore: document.getElementById('high-score'),
             energyVal: document.getElementById('energy-val'),
             energyFill: document.getElementById('energy-fill'),
             energyPanel: document.getElementById('energy-panel'),
+            activeBuff: document.getElementById('active-buff'),
             dataScore: document.getElementById('data-score'),
             gameOver: document.getElementById('game-over-screen'),
             gachaBtn: document.getElementById('gacha-btn'),
             gachaOverlay: document.getElementById('gacha-overlay'),
             pullResult: document.getElementById('pull-result'),
-            pullVisual: document.getElementById('pull-visual')
+            pullDesc: document.getElementById('pull-desc'),
+            pullVisual: document.getElementById('pull-visual'),
+            goStats: document.getElementById('go-stats')
         };
 
         // --- GAME LOOP ---
         function gameLoop(timestamp) {
-            if (!isGameOver) update(timestamp);
+            if (!isGameOver) {
+                update(timestamp);
+                updateEnemy(timestamp);
+            }
             draw(timestamp);
             requestAnimationFrame(gameLoop);
         }
@@ -818,6 +861,135 @@
                 p.y += p.vy;
                 p.size *= 0.95;
                 if (p.life <= 0) particles.splice(i, 1);
+            }
+        }
+
+        function updateEnemy(timestamp) {
+            if (!enemy.active) {
+                if (roomIdCounter >= ENEMY_SPAWN_ROOM) {
+                    enemy.active = true;
+                    enemy.x = 0;
+                    enemy.y = 0;
+                    visualEnemy.x = 0;
+                    visualEnemy.y = 0;
+                }
+                return;
+            }
+
+            // Lerp Enemy Visuals
+            visualEnemy.x += (enemy.x * CELL_SIZE - visualEnemy.x) * 0.1;
+            visualEnemy.y += (enemy.y * CELL_SIZE - visualEnemy.y) * 0.1;
+
+            // Apply Buff (Stealth Core slows enemy)
+            const speedMod = activeCore.buff.enemySlow || 1.0;
+            const currentInterval = enemy.interval * speedMod;
+
+            if (timestamp - enemy.lastMove > currentInterval) {
+                enemy.lastMove = timestamp;
+
+                const move = getNextStepBFS(enemy.x, enemy.y, player.x, player.y);
+
+                if (move) {
+                    enemy.x += move.x;
+                    enemy.y += move.y;
+
+                    if (enemy.x === player.x && enemy.y === player.y) {
+                        damagePlayer();
+                    }
+                }
+            }
+        }
+
+        function isValidMove(cx, cy, dx, dy) {
+            const tx = cx + dx;
+            const ty = cy + dy;
+
+            if (!grid.has(`${tx},${ty}`)) return false;
+
+            const cVal = getCell(cx, cy);
+            const cRoom = getRoomId(cx, cy);
+            const tRoom = getRoomId(tx, ty);
+
+            if (cRoom === tRoom) return true; // Same room
+
+            // Crossing rooms logic
+            if (dx === 1 && cVal === 2) return true;
+            if (dx === -1 && cVal === 4) return true;
+            if (dy === 1 && cVal === 3) return true;
+            if (dy === -1 && cVal === 5) return true;
+
+            return false;
+        }
+
+        function getNextStepBFS(sx, sy, tx, ty) {
+            let queue = [{x: sx, y: sy}];
+            let visited = new Set();
+            let cameFrom = new Map();
+            visited.add(`${sx},${sy}`);
+
+            let found = false;
+            let maxSteps = 200;
+            let steps = 0;
+
+            while(queue.length > 0 && steps < maxSteps) {
+                let current = queue.shift();
+                steps++;
+
+                if (current.x === tx && current.y === ty) {
+                    found = true;
+                    break;
+                }
+
+                const dirs = [
+                    {dx: 1, dy: 0}, {dx: -1, dy: 0},
+                    {dx: 0, dy: 1}, {dx: 0, dy: -1}
+                ];
+
+                for (let d of dirs) {
+                    let nx = current.x + d.dx;
+                    let ny = current.y + d.dy;
+                    let nKey = `${nx},${ny}`;
+
+                    if (!visited.has(nKey)) {
+                        if (isValidMove(current.x, current.y, d.dx, d.dy)) {
+                            visited.add(nKey);
+                            cameFrom.set(nKey, current);
+                            queue.push({x: nx, y: ny});
+                        }
+                    }
+                }
+            }
+
+            if (found) {
+                let curr = {x: tx, y: ty};
+                while(true) {
+                    let key = `${curr.x},${curr.y}`;
+                    let parent = cameFrom.get(key);
+                    if (parent.x === sx && parent.y === sy) {
+                        return {x: curr.x - sx, y: curr.y - sy};
+                    }
+                    curr = parent;
+                }
+            }
+            return null;
+        }
+
+        function damagePlayer() {
+            energy -= ENEMY_DAMAGE;
+            SoundManager.play('damage');
+            spawnParticles(player.x, player.y, "#9933ff");
+
+            // Stun Enemy
+            enemy.lastMove = performance.now() + 2000;
+
+            ui.energyPanel.classList.remove('stat-bump');
+            void ui.energyPanel.offsetWidth;
+            ui.energyPanel.classList.add('stat-bump');
+            updateUI();
+
+            if (energy <= 0) {
+                energy = 0;
+                triggerGameOver();
             }
         }
 
@@ -849,13 +1021,17 @@
             particles = [];
             
             roomIdCounter = 0;
-            energy = 100;
-            dataScore = 0; 
+            energy = BASE_MAX_ENERGY + (activeCore.buff.maxEnergy ? activeCore.buff.maxEnergy - 100 : 0);
+            dataScore = 0;
             isGameOver = false;
             
             player = { x: 0, y: 0 };
             visualPlayer = { x: 0, y: 0 }; 
             
+            // Reset Enemy
+            enemy = { x: 0, y: 0, active: false, lastMove: 0, interval: 600 };
+            visualEnemy = { x: 0, y: 0 };
+
             ui.gameOver.classList.remove('visible');
             updateUI();
             
@@ -872,10 +1048,14 @@
             if (!ui.rooms) return;
             ui.rooms.innerText = roomIdCounter;
             ui.dataScore.innerText = dataScore;
-            
-            ui.energyVal.innerText = Math.ceil(energy) + "%";
-            ui.energyFill.style.width = Math.max(0, energy) + "%";
-            
+            ui.highScore.innerText = "BEST: " + highScore;
+            ui.activeBuff.innerText = activeCore.desc;
+
+            const maxE = activeCore.buff.maxEnergy || BASE_MAX_ENERGY;
+
+            ui.energyVal.innerText = Math.ceil(energy) + "/" + maxE;
+            ui.energyFill.style.width = Math.max(0, (energy / maxE) * 100) + "%";
+
             if (energy < 20) {
                 ui.energyFill.style.background = "linear-gradient(90deg, #ff3333, #ff6666)";
                 ui.energyFill.style.boxShadow = "0 0 15px #ff3333, inset 0 0 5px rgba(255,255,255,0.3)";
@@ -899,13 +1079,42 @@
             isGameOver = true;
             SoundManager.play('die');
 
+            // Check High Score
+            if (roomIdCounter > highScore) {
+                highScore = roomIdCounter;
+                localStorage.setItem('dungeon_crawler_highscore', highScore);
+            }
+
             // Update game over stats
             const goRooms = document.getElementById('go-rooms');
             const goData = document.getElementById('go-data');
+            const goHigh = document.getElementById('go-high-score');
+
             if (goRooms) goRooms.innerText = roomIdCounter;
             if (goData) goData.innerText = dataScore;
+            if (goHigh) goHigh.innerText = highScore;
 
             ui.gameOver.classList.add('visible');
+        }
+
+        function shareScore() {
+            const text = `🛑 SYSTEM FAILURE 🛑\nSectors Explored: ${roomIdCounter}\nData Mined: ${dataScore}\nHigh Score: ${highScore}\n\nCan you beat the glitch?\nhttps://game.jeb4.dev`;
+
+            // Fallback copy method
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                const btn = document.getElementById('share-btn');
+                const originalText = btn.innerText;
+                btn.innerText = "COPIED!";
+                setTimeout(() => btn.innerText = originalText, 2000);
+            } catch (err) {
+                console.error('Fallback: Oops, unable to copy', err);
+            }
+            document.body.removeChild(textArea);
         }
 
         // --- GACHA LOGIC ---
@@ -921,8 +1130,11 @@
             // Reset to decoding state
             const rewardBox = document.getElementById('reward-box');
             const gachaHint = document.getElementById('gacha-hint');
+            const pullDesc = document.getElementById('pull-desc');
 
             if (rewardBox) rewardBox.style.display = 'none';
+            if (pullDesc) pullDesc.innerText = "";
+
             if (gachaHint) {
                 gachaHint.style.display = 'block';
                 gachaHint.innerText = 'Processing Signal...';
@@ -939,17 +1151,24 @@
                 else if(roll > 0.75) item = LOOT_TABLE.filter(i => i.rarity === "Rare")[Math.floor(Math.random() * 4)];
                 else item = LOOT_TABLE.filter(i => i.rarity === "Common")[Math.floor(Math.random() * 2)];
 
-                activeColor = item.color;
+                // Apply Core Buffs immediately
+                activeCore = item;
                 unlockedSkins.add(item.name);
                 
                 // Show reward panel
                 if (rewardBox) rewardBox.style.display = 'block';
                 if (gachaHint) gachaHint.innerText = 'Tap anywhere to continue';
+                if (pullDesc) pullDesc.innerText = item.desc;
 
                 ui.pullResult.innerHTML = `<span style="color:${item.color}; font-size: 12px; letter-spacing: 2px;">${item.rarity.toUpperCase()}</span><br><span style="font-size:26px; color:${item.color}; text-shadow: 0 0 20px ${item.color};">${item.name}</span><br><span style="font-size:11px; color:#666; letter-spacing: 1px; margin-top: 10px; display: inline-block;">◆ CORE EQUIPPED ◆</span>`;
                 ui.pullVisual.style.boxShadow = `0 0 80px ${item.color}, inset 0 0 40px ${item.color}`;
                 ui.pullVisual.style.borderColor = item.color;
                 
+                // Refresh max energy if buff changed
+                const maxE = activeCore.buff.maxEnergy || BASE_MAX_ENERGY;
+                if (energy > maxE) energy = maxE;
+                updateUI();
+
                 SoundManager.play('collect');
                 
             }, 1200);
@@ -1077,7 +1296,10 @@
                         const wx = startX + c;
                         const wy = startY + r;
                         if (wx === 0 && wy === 0) continue;
-                        if (Math.random() < 0.15) {
+
+                        // Apply Loot Chance Buff
+                        const chance = BASE_ITEM_CHANCE + (activeCore.buff.lootChance || 0);
+                        if (Math.random() < chance) {
                             items.set(`${wx},${wy}`, 1);
                         }
                     }
@@ -1129,38 +1351,33 @@
             const targetX = player.x + dx;
             const targetY = player.y + dy;
             
-            let canGo = false;
-            const cVal = getCell(player.x, player.y);
-            const cRoom = getRoomId(player.x, player.y);
-            const tRoom = getRoomId(targetX, targetY);
-
-            if (grid.has(`${targetX},${targetY}`)) {
-                if (cRoom === tRoom) canGo = true; 
-                else {
-                    if (dx === 1 && cVal === 2) canGo = true;
-                    if (dx === -1 && cVal === 4) canGo = true;
-                    if (dy === 1 && cVal === 3) canGo = true;
-                    if (dy === -1 && cVal === 5) canGo = true;
-                }
-            }
-
-            if (canGo) {
+            // Check move validity using common logic
+            if (isValidMove(player.x, player.y, dx, dy)) {
                 player.x = targetX;
                 player.y = targetY;
                 SoundManager.play('move');
-                spawnParticles(player.x, player.y, activeColor); 
+                spawnParticles(player.x, player.y, activeCore.color);
 
                 if (items.has(`${player.x},${player.y}`)) {
                     items.delete(`${player.x},${player.y}`);
-                    energy = Math.min(MAX_ENERGY, energy + ENERGY_GAIN_ITEM);
-                    dataScore++;
+
+                    // Apply Item Buffs
+                    const gain = BASE_ENERGY_GAIN * (activeCore.buff.energyMult || 1);
+                    const maxE = activeCore.buff.maxEnergy || BASE_MAX_ENERGY;
+                    const data = 1 + (activeCore.buff.dataBonus || 0);
+
+                    energy = Math.min(maxE, energy + gain);
+                    dataScore += data;
+
                     SoundManager.play('collect');
                     spawnParticles(player.x, player.y, "#00f3ff"); 
                     ui.energyPanel.classList.remove('stat-bump');
                     void ui.energyPanel.offsetWidth;
                     ui.energyPanel.classList.add('stat-bump');
                 } else {
-                    energy -= ENERGY_COST_MOVE;
+                    // Apply Move Cost Buff
+                    const cost = BASE_ENERGY_COST * (activeCore.buff.moveCost || 1);
+                    energy -= cost;
                 }
 
                 if (!realizedCells.has(`${targetX},${targetY}`)) {
@@ -1380,15 +1597,41 @@
             }
             ctx.globalAlpha = 1.0;
 
-            // 4. Player
-            ctx.fillStyle = activeColor;
+            // 4. Enemy
+            if (enemy.active) {
+                ctx.save();
+                // Simple lerp is handled in update(), just draw visualEnemy
+                const ex = visualEnemy.x;
+                const ey = visualEnemy.y;
+                const pOffset = (CELL_SIZE - 40) / 2;
+
+                // Glitch effect: Random offset
+                const gx = (Math.random() - 0.5) * 4;
+                const gy = (Math.random() - 0.5) * 4;
+
+                ctx.fillStyle = "#9933ff";
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = "#9933ff";
+                ctx.fillRect(ex + pOffset + gx, ey + pOffset + gy, 40, 40);
+
+                // Eyes
+                ctx.fillStyle = "#fff";
+                ctx.fillRect(ex + pOffset + 8, ey + pOffset + 10, 8, 8);
+                ctx.fillRect(ex + pOffset + 24, ey + pOffset + 10, 8, 8);
+
+                ctx.shadowBlur = 0;
+                ctx.restore();
+            }
+
+            // 5. Player
+            ctx.fillStyle = activeCore.color;
             const pScale = 1 + Math.sin(timestamp * 0.01) * 0.05;
             const pSize = (CELL_SIZE - 30) * pScale;
             const pOffset = (CELL_SIZE - pSize) / 2;
             
             ctx.fillRect(visualPlayer.x + pOffset, visualPlayer.y + pOffset, pSize, pSize);
             ctx.shadowBlur = 15;
-            ctx.shadowColor = activeColor;
+            ctx.shadowColor = activeCore.color;
             ctx.fillRect(visualPlayer.x + pOffset + 5, visualPlayer.y + pOffset + 5, pSize - 10, pSize - 10);
             ctx.shadowBlur = 0;
 
